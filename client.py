@@ -35,12 +35,18 @@ class Client(BaseClient):
             self.key = self.crypto.get_random_bytes(32)
 
             encrypted_key = self.crypto.asymmetric_encrypt(self.key, self.pks.get_encryption_key(self.username))
-            encrypted_key += self.crypto.asymmetric_sign(encrypted_key, self.rsa.rsa_priv_key)
+            encrypted_key += self.crypto.asymmetric_sign(encrypted_key, self.rsa_priv_key)
 
             self.storage_server.put(location, encrypted_key)
         else:
-            self.key = self.crypto.asymmetric_decrypt(self.key, self.elg_priv_key)
-            if slef.crypto.asymmetric_verify(encrypted_key, sign????, self.pks.get_encryption_key(self.username))
+            sign = self.key[-512:]
+            self.key = self.key[:-512]
+            if self.crypto.asymmetric_verify(self.key, sign, self.pks.get_signature_key(self.username)):
+                self.key = self.crypto.asymmetric_decrypt(self.key, self.elg_priv_key)
+            else:
+                print ("Verification error")
+                raise IntegrityError()
+
 
 
     def resolve(self, uid):
@@ -55,13 +61,16 @@ class Client(BaseClient):
 
     def upload(self, name, value):
         uid = self.resolve(path_join(self.username, name))
+        IV = self.crypto.get_random_bytes(16)
+        value = self.crypto.symmetric_encrypt(value, self.key, 'AES', 'CBC', IV)
 
         self.storage_server.put(uid, "[DATA] " + value)
-        raise NotImplementedError
 
     def download(self, name):
         # Replace with your implementation
-        raise NotImplementedError
+        uid = self.resolve(path_join(self.username, name))
+        message = self.storage_server.get(uid)[7:]
+        return message
 
     def share(self, user, name):
         # Replace with your implementation (not needed for Part 1)
@@ -74,3 +83,26 @@ class Client(BaseClient):
     def revoke(self, user, name):
         # Replace with your implementation (not needed for Part 1)
         raise NotImplementedError
+
+from servers import PublicKeyServer, StorageServer
+from crypto import Crypto
+
+print("Initializing servers and clients...")
+pks = PublicKeyServer()
+server = StorageServer()
+crypto = Crypto()
+alice = Client(server, pks, crypto, "alice")
+bob = Client(server, pks, crypto, "bob")
+carol = Client(server, pks, crypto, "carol")
+dave = Client(server, pks, crypto, "dave")
+
+print("Testing client put and share...")
+alice.upload("a", "b")
+
+
+print (alice.download("a"))
+assert alice.download("a") == "b"
+
+
+alice2 = Client(server, pks, crypto, "alice")
+assert alice.key == alice2.key
